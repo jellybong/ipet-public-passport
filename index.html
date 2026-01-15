@@ -4,9 +4,100 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>iPet Public Passport</title>
+  <style>
+    body{font-family:-apple-system,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;}
+    .card{border:1px solid rgba(127,127,127,.25);border-radius:16px;padding:18px;}
+    .muted{opacity:.7}
+    .row{display:flex;gap:10px;align-items:baseline}
+    .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#111827;color:#fff;font-size:12px;white-space:nowrap}
+    .missing{margin-top:12px;padding:12px;border-radius:14px;border:1px solid rgba(255,165,0,.35);background:rgba(255,165,0,.10)}
+    hr{border:none;border-top:1px solid rgba(127,127,127,.25);margin:14px 0}
+    img{width:100%;max-height:320px;object-fit:cover;border-radius:14px;border:1px solid rgba(127,127,127,.25);margin:12px 0}
+    a{color:inherit}
+    code{background:rgba(127,127,127,.12);padding:2px 6px;border-radius:6px}
+  </style>
 </head>
 <body>
-  <h1>iPet Public Passport</h1>
-  <p>Bu bir test sayfası. (Sonra gerçek HTML ile değiştireceğiz.)</p>
+  <div class="card" id="app">Yükleniyor…</div>
+
+  <script>
+    const app = document.getElementById("app");
+    const params = new URLSearchParams(location.search);
+    const token = params.get("token");
+
+    if (!token) {
+      app.innerHTML = `
+        <h2>Token gerekli</h2>
+        <p class="muted">Bu sayfa bir QR/link ile açılmalı.</p>
+        <p class="muted">Örnek: <code>?token=...</code></p>
+      `;
+      throw new Error("token missing");
+    }
+
+    // ✅ Senin çalışan Supabase Edge Function JSON endpoint'in:
+    const endpoint =
+      "https://kfmjbuouyjqqpbiiosvs.supabase.co/functions/v1/public-pet"
+      + "?token=" + encodeURIComponent(token);
+
+    fetch(endpoint, { cache: "no-store" })
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        return { ok: r.ok, status: r.status, j };
+      })
+      .then(({ ok, j }) => {
+        if (!ok) {
+          app.innerHTML = `<h2>Bulunamadı</h2><p class="muted">${j.error || "Hata"}</p>`;
+          return;
+        }
+
+        const verification =
+          j.verification_status === 2 ? "✅ Verified" :
+          j.verification_status === 1 ? "⏳ Pending" :
+          "⚪ Unverified";
+
+        const title = `${j.name || ""}`;
+        const subtitle = `${j.species || ""}${j.breed ? " • " + j.breed : ""}`;
+
+        const photo = j.profile_photo_url ? `<img src="${j.profile_photo_url}" alt="pet photo" />` : "";
+
+        const missing = j.is_missing
+          ? `<div class="missing">
+               <div class="badge">Kayıp Modu</div>
+               <div class="muted" style="margin-top:8px;white-space:pre-wrap">${j.lost_message || "Bu pet kayıp olarak işaretlenmiş. Lütfen bulunursa iletişime geçin."}</div>
+             </div>`
+          : "";
+
+        const emergency = (j.emergency_name || j.emergency_phone)
+          ? `<div class="row"><span class="badge">Acil</span><div>
+               <div><strong>${j.emergency_name || "-"}</strong></div>
+               <div class="muted">${j.emergency_phone ? `<a href="tel:${j.emergency_phone}">${j.emergency_phone}</a>` : ""}</div>
+             </div></div>`
+          : `<p class="muted">Acil iletişim eklenmemiş.</p>`;
+
+        const allergies = j.allergies
+          ? `<p><strong>Alerji:</strong> ${j.allergies}</p>`
+          : `<p class="muted">Alerji bilgisi paylaşılmıyor.</p>`;
+
+        app.innerHTML = `
+          <div class="top">
+            <div>
+              <h2 style="margin:0">${title}</h2>
+              <p class="muted" style="margin:6px 0 0 0">${subtitle}</p>
+            </div>
+            <div class="muted">${verification}</div>
+          </div>
+          ${photo}
+          ${missing}
+          <hr/>
+          ${emergency}
+          <hr/>
+          ${allergies}
+        `;
+      })
+      .catch((err) => {
+        app.innerHTML = `<h2>Hata</h2><p class="muted">${String(err)}</p>`;
+      });
+  </script>
 </body>
 </html>
