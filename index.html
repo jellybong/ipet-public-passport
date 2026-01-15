@@ -9,8 +9,7 @@
     .card{border:1px solid rgba(127,127,127,.25);border-radius:16px;padding:18px;}
     .muted{opacity:.7}
     .row{display:flex;gap:10px;align-items:baseline}
-    .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-    .badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#111827;color:#fff;font-size:12px;white-space:nowrap}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#111827;color:#fff;font-size:12px}
     .missing{margin-top:12px;padding:12px;border-radius:14px;border:1px solid rgba(255,165,0,.35);background:rgba(255,165,0,.10)}
     hr{border:none;border-top:1px solid rgba(127,127,127,.25);margin:14px 0}
     img{width:100%;max-height:320px;object-fit:cover;border-radius:14px;border:1px solid rgba(127,127,127,.25);margin:12px 0}
@@ -26,78 +25,75 @@
     const params = new URLSearchParams(location.search);
     const token = params.get("token");
 
+    const API_BASE = "https://kfmjbuouyjqqpbiiosvs.supabase.co/functions/v1/public-pet";
+
+    function esc(s){ return String(s ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
+
     if (!token) {
       app.innerHTML = `
         <h2>Token gerekli</h2>
         <p class="muted">Bu sayfa bir QR/link ile açılmalı.</p>
         <p class="muted">Örnek: <code>?token=...</code></p>
       `;
-      throw new Error("token missing");
-    }
+    } else {
+      const url = API_BASE + "?token=" + encodeURIComponent(token) + "&_=" + Date.now();
 
-    // ✅ Senin çalışan Supabase Edge Function JSON endpoint'in:
-    const endpoint =
-      "https://kfmjbuouyjqqpbiiosvs.supabase.co/functions/v1/public-pet"
-      + "?token=" + encodeURIComponent(token);
+      fetch(url, { method: "GET", mode: "cors", cache: "no-store" })
+        .then(async (r) => {
+          if (!r.ok) throw new Error("HTTP " + r.status + " — " + (await r.text()));
+          return r.json();
+        })
+        .then((pet) => {
+          const badge =
+            pet.verification_status === 2 ? "✅ Verified" :
+            pet.verification_status === 1 ? "⏳ Pending" :
+            "⚪ Unverified";
 
-    fetch(endpoint, { cache: "no-store" })
-      .then(async (r) => {
-        const j = await r.json().catch(() => ({}));
-        return { ok: r.ok, status: r.status, j };
-      })
-      .then(({ ok, j }) => {
-        if (!ok) {
-          app.innerHTML = `<h2>Bulunamadı</h2><p class="muted">${j.error || "Hata"}</p>`;
-          return;
-        }
+          const lost = pet.is_missing
+            ? `<div class="missing"><div><strong>KAYIP MODU AÇIK</strong></div>${pet.lost_message ? `<div class="muted" style="margin-top:6px;white-space:pre-wrap">${esc(pet.lost_message)}</div>` : ""}</div>`
+            : "";
 
-        const verification =
-          j.verification_status === 2 ? "✅ Verified" :
-          j.verification_status === 1 ? "⏳ Pending" :
-          "⚪ Unverified";
+          const photo = pet.profile_photo_url
+            ? `<img src="${esc(pet.profile_photo_url)}" alt="Pet photo" />`
+            : "";
 
-        const title = `${j.name || ""}`;
-        const subtitle = `${j.species || ""}${j.breed ? " • " + j.breed : ""}`;
+          const allergies = pet.allergies
+            ? `<p><strong>Alerji:</strong> ${esc(pet.allergies)}</p>`
+            : `<p class="muted">Alerji bilgisi paylaşılmıyor.</p>`;
 
-        const photo = j.profile_photo_url ? `<img src="${j.profile_photo_url}" alt="pet photo" />` : "";
+          const emergency = (pet.emergency_name || pet.emergency_phone)
+            ? `<div class="row"><span class="badge">Acil</span><div>
+                 <div><strong>${esc(pet.emergency_name || "-")}</strong></div>
+                 <div class="muted">${pet.emergency_phone ? `<a href="tel:${esc(pet.emergency_phone)}">${esc(pet.emergency_phone)}</a>` : ""}</div>
+               </div></div>`
+            : `<p class="muted">Acil iletişim eklenmemiş.</p>`;
 
-        const missing = j.is_missing
-          ? `<div class="missing">
-               <div class="badge">Kayıp Modu</div>
-               <div class="muted" style="margin-top:8px;white-space:pre-wrap">${j.lost_message || "Bu pet kayıp olarak işaretlenmiş. Lütfen bulunursa iletişime geçin."}</div>
-             </div>`
-          : "";
-
-        const emergency = (j.emergency_name || j.emergency_phone)
-          ? `<div class="row"><span class="badge">Acil</span><div>
-               <div><strong>${j.emergency_name || "-"}</strong></div>
-               <div class="muted">${j.emergency_phone ? `<a href="tel:${j.emergency_phone}">${j.emergency_phone}</a>` : ""}</div>
-             </div></div>`
-          : `<p class="muted">Acil iletişim eklenmemiş.</p>`;
-
-        const allergies = j.allergies
-          ? `<p><strong>Alerji:</strong> ${j.allergies}</p>`
-          : `<p class="muted">Alerji bilgisi paylaşılmıyor.</p>`;
-
-        app.innerHTML = `
-          <div class="top">
-            <div>
-              <h2 style="margin:0">${title}</h2>
-              <p class="muted" style="margin:6px 0 0 0">${subtitle}</p>
+          app.innerHTML = `
+            <div class="row" style="justify-content:space-between;gap:12px">
+              <div>
+                <h2 style="margin:0">${esc(pet.name)}</h2>
+                <p class="muted" style="margin:6px 0 0 0">${esc(pet.species)}${pet.breed ? " • " + esc(pet.breed) : ""}</p>
+              </div>
+              <div class="muted" style="white-space:nowrap">${badge}</div>
             </div>
-            <div class="muted">${verification}</div>
-          </div>
-          ${photo}
-          ${missing}
-          <hr/>
-          ${emergency}
-          <hr/>
-          ${allergies}
-        `;
-      })
-      .catch((err) => {
-        app.innerHTML = `<h2>Hata</h2><p class="muted">${String(err)}</p>`;
-      });
+
+            ${photo}
+            ${lost}
+
+            <hr/>
+            ${emergency}
+            <hr/>
+            ${allergies}
+          `;
+        })
+        .catch((e) => {
+          app.innerHTML = `
+            <h2>Hata</h2>
+            <p class="muted">${esc(e && e.message ? e.message : e)}</p>
+            <p class="muted">Muhtemel sebep: CORS. Function response header’larında <code>access-control-allow-origin</code> olmalı.</p>
+          `;
+        });
+    }
   </script>
 </body>
 </html>
